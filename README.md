@@ -24,7 +24,7 @@ pip install pyautogui pyperclip
 
 ## Usage 🚀
 
-# ⚠️DON'T INTERRUPT THE PROGRAM WHILE IT IS TYPING ⚠️
+# ⚠️ DON'T INTERRUPT THE PROGRAM WHILE IT IS TYPING ⚠️
 
 ### With GUI 🖥️
 
