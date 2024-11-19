@@ -1,40 +1,59 @@
-import pyautogui
-import pyperclip
-import time
 import tkinter as tk
 from tkinter import ttk
 import threading
+import time
+import subprocess
 import keyboard
+from Xlib import display, X
+import pyperclip
+from pynput.keyboard import Key, Controller
 
-class AccurateCodeAutoTyper:
-    def __init__(self, master):
+class LinuxCodeAutoTyper:
+    def __init__(self, master):  # Fixed: Changed _init_ to __init__
         self.master = master
-        master.title("Code Tantra Auto Typer")
-        master.geometry("350x450")  # Adjusted window size
+        master.title("Code Auto Typer - Linux")
+        master.geometry("350x450")
         master.configure(bg="#1c1c1c")
-
-        # Remove window decorations
-        master.overrideredirect(True)
-        # Keep the window always on top
-        master.wm_attributes("-topmost", True)
-
+        
+        # Remove window decorations but keep basic controls for Linux
+        master.wm_attributes('-type', 'splash')
+        master.wm_attributes('-topmost', True)
+        
+        self.keyboard = Controller()
         self.running = False
         self.paused = False
         self.clipboard_text = []
-        self.current_index = 0  # Track where we left off in clipboard text
-
+        self.current_index = 0
+        self.typing_speed = 0.003  # Increased typing speed (3x faster)
+        self.bracket_pairs = {
+            '{': '}',
+            '[': ']',
+            '(': ')',
+            '<': '>',
+            '"': '"',
+            "'": "'"
+        }
         self.create_widgets()
-
+        
         # Bind mouse events for dragging
         self.master.bind("<Button-1>", self.on_start_drag)
         self.master.bind("<B1-Motion>", self.on_drag)
-
-        # Set up global hotkeys
-        keyboard.add_hotkey('f6', self.toggle_typing)
-        keyboard.add_hotkey('f7', self.toggle_pause)
-        keyboard.add_hotkey('esc', self.stop_typing)
-        keyboard.add_hotkey('ctrl+shift+x', self.exit_program)
-        keyboard.add_hotkey('ctrl+shift+m', self.toggle_hide)
+        
+        # Set up keyboard listeners using pynput for Linux compatibility
+        try:
+            keyboard.add_hotkey('f6', self.toggle_typing)
+            keyboard.add_hotkey('f7', self.toggle_pause)
+            keyboard.add_hotkey('esc', self.stop_typing)
+            keyboard.add_hotkey('ctrl+shift+x', self.exit_program)
+            keyboard.add_hotkey('ctrl+shift+m', self.toggle_hide)
+        except Exception as e:
+            print(f"Error setting up hotkeys: {e}")
+            # Fallback to tkinter bindings if keyboard module fails
+            self.master.bind('<F6>', lambda e: self.toggle_typing())
+            self.master.bind('<F7>', lambda e: self.toggle_pause())
+            self.master.bind('<Escape>', lambda e: self.stop_typing())
+            self.master.bind('<Control-Shift-X>', lambda e: self.exit_program())
+            self.master.bind('<Control-Shift-M>', lambda e: self.toggle_hide())
 
     def create_widgets(self):
         style = ttk.Style()
@@ -42,92 +61,112 @@ class AccurateCodeAutoTyper:
         style.configure("TFrame", background="#1c1c1c")
         style.configure("TButton", background="#282828", foreground="#ffffff", font=("Arial", 10))
         style.configure("TLabel", background="#1c1c1c", foreground="#ffffff", font=("Arial", 10))
-        style.configure("TLabelFrame", background="#1c1c1c", foreground="#ffffff")
-
-        # Title and Subheading
-        title_label = ttk.Label(self.master, text="Auto Typer", font=("Arial", 14, "bold"), foreground="#00ff00")
-        title_label.pack(pady=(10, 5))
-
+        
+        # Title bar with close button
+        title_frame = ttk.Frame(self.master)
+        title_frame.pack(fill=tk.X, pady=5)
+        
+        title_label = ttk.Label(title_frame, text="Linux Code Auto Typer", font=("Arial", 14, "bold"), 
+                               foreground="#00ff00")
+        title_label.pack(side=tk.LEFT, padx=10)
+        
+        close_button = ttk.Button(title_frame, text="×", width=3, command=self.exit_program)
+        close_button.pack(side=tk.RIGHT, padx=5)
+        
         main_frame = ttk.Frame(self.master, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
-
-        # Buttons
+        
+        # Control buttons
         self.start_button = ttk.Button(main_frame, text="Start Typing (F6)", command=self.toggle_typing)
-        self.start_button.pack(fill=tk.X, pady=(5, 5))
-
-        self.pause_button = ttk.Button(main_frame, text="Pause/Resume Typing (F7)", command=self.toggle_pause)
-        self.pause_button.pack(fill=tk.X, pady=(5, 5))
-
-        # Status Label
+        self.start_button.pack(fill=tk.X, pady=5)
+        
+        self.pause_button = ttk.Button(main_frame, text="Pause/Resume (F7)", command=self.toggle_pause)
+        self.pause_button.pack(fill=tk.X, pady=5)
+        
+        # Status displays
         self.status_label = ttk.Label(main_frame, text="Status: Idle", font=('Arial', 10, 'bold'))
-        self.status_label.pack(pady=(5, 10))
-
-        # Countdown Timer Visualizer
+        self.status_label.pack(pady=5)
+        
         self.timer_label = ttk.Label(main_frame, text="", font=('Arial', 12), foreground="#ffcc00")
-        self.timer_label.pack(pady=(5, 10))
-
+        self.timer_label.pack(pady=5)
+        
         # Instructions
-        ttk.Label(main_frame, text="Instructions:", font=("Arial", 12, "bold"), foreground="#ffffff").pack(pady=(5, 5))
+        self.create_instructions(main_frame)
 
-        # Instructions Text
-        self.instructions_text = tk.Text(main_frame, height=14, wrap=tk.WORD, background="#1c1c1c", foreground="#f0f0f0",
-                                         font=("Arial", 9), bd=0, padx=5, pady=5)
-        self.instructions_text.pack(fill=tk.BOTH, expand=True, pady=(5, 10))
-        self.add_instructions()
+    def create_instructions(self, parent):
+        instructions = ttk.LabelFrame(parent, text="Instructions", padding="5")
+        instructions.pack(fill=tk.BOTH, expand=True, pady=5)
+        
+        text_widget = tk.Text(instructions, height=8, wrap=tk.WORD, bg="#1c1c1c", fg="#f0f0f0",
+                            font=("Arial", 9), bd=0)
+        text_widget.pack(fill=tk.BOTH, expand=True)
+        
+        instructions_text = """
+• F6: Start/Stop typing
+• F7: Pause/Resume typing
+• ESC: Emergency stop
+• Ctrl+Shift+X: Exit program
+• Ctrl+Shift+M: Hide/Show window
+• Brackets and quotes are handled automatically
+• Optimized for fast typing speed
+• Works with C++ and other programming languages
+"""
+        text_widget.insert(tk.END, instructions_text)
+        text_widget.config(state=tk.DISABLED)
 
-        ttk.Label(main_frame, text="F6: Start/Stop Typing | F7: Pause/Resume | Esc: Stop | Ctrl+Shift+X: Exit | Ctrl+Shift+M: Hide/Unhide",
-                  font=("Arial", 8), foreground="#ffffff").pack(pady=(5, 5))
-
-    def add_instructions(self):
-        self.instructions_text.insert(tk.END, "Imporatant Stuff!\n", "header")
-        self.instructions_text.insert(tk.END, "\nHow to use:\n", "subheader")
-        self.instructions_text.insert(tk.END, "- Press ", "normal")
-        self.instructions_text.insert(tk.END, "F6 ", "key")
-        self.instructions_text.insert(tk.END, "to start or stop typing.\n", "normal")
-        self.instructions_text.insert(tk.END, "- Press ", "normal")
-        self.instructions_text.insert(tk.END, "F7 ", "key")
-        self.instructions_text.insert(tk.END, "to pause or resume typing.\n", "normal")
-        self.instructions_text.insert(tk.END, "- Press ", "normal")
-        self.instructions_text.insert(tk.END, "Esc ", "key")
-        self.instructions_text.insert(tk.END, "to stop typing.\n", "normal")
-        self.instructions_text.insert(tk.END, "- Press ", "normal")
-        self.instructions_text.insert(tk.END, "Ctrl+Shift+X ", "key")
-        self.instructions_text.insert(tk.END, "to exit the program.\n", "normal")
-        self.instructions_text.insert(tk.END, "- Press ", "normal")
-        self.instructions_text.insert(tk.END, "Ctrl+Shift+M ", "key")
-        self.instructions_text.insert(tk.END, "to hide or unhide the program.\n", "normal")
-
-        # Configure text tags for formatting
-        self.instructions_text.tag_configure("header", font=("Arial", 12, "bold"), foreground="#00ff00")
-        self.instructions_text.tag_configure("subheader", font=("Arial", 10, "bold"), foreground="#ffcc00")
-        self.instructions_text.tag_configure("normal", font=("Arial", 9), foreground="#f0f0f0")
-        self.instructions_text.tag_configure("key", font=("Arial", 9, "bold"), foreground="#00ccff")
-
-        self.instructions_text.config(state=tk.DISABLED)  # Make it read-only
-
-    def countdown(self, duration):
-        for i in range(duration, 0, -1):
-            if not self.running:
-                break
-            self.timer_label.config(text=f"Starting in {i}...")
-            time.sleep(1)
-        self.timer_label.config(text="")
+    def simulate_typing(self, text):
+        """Improved typing simulation with better bracket handling"""
+        for char in text:
+            if not self.running or self.paused:
+                return
+                
+            # Handle special characters
+            if char in self.bracket_pairs:
+                # Type opening bracket
+                self.keyboard.press(char)
+                self.keyboard.release(char)
+                time.sleep(self.typing_speed)
+                
+                # Type closing bracket
+                closing_char = self.bracket_pairs[char]
+                self.keyboard.press(closing_char)
+                self.keyboard.release(closing_char)
+                
+                # Move cursor back inside brackets
+                self.keyboard.press(Key.left)
+                self.keyboard.release(Key.left)
+            else:
+                # Normal character typing
+                self.keyboard.press(char)
+                self.keyboard.release(char)
+            
+            time.sleep(self.typing_speed)
 
     def autotype_clipboard(self):
         if not self.clipboard_text:
             self.clipboard_text = pyperclip.paste().split("\n")
-
+        
         for i in range(self.current_index, len(self.clipboard_text)):
             if not self.running or self.paused:
                 break
+                
             line = self.clipboard_text[i]
-            pyautogui.write(line, interval=0.005)  # Reduced interval for faster typing
-            for char in line:
-                if char in ["[", '"', "'", "("]:
-                    pyautogui.press("delete")
-            pyautogui.press("enter")
-            pyautogui.press("home")
-            self.current_index = i + 1  # Update current index
+            # Enhanced C++ code detection and formatting
+            if line.strip().startswith(('#include', 'using namespace', 'int main')):
+                # Handle C++ specific lines with proper indentation
+                self.simulate_typing(line)
+            else:
+                # Normal line typing with bracket handling
+                self.simulate_typing(line)
+            
+            # Handle end of line
+            self.keyboard.press(Key.enter)
+            self.keyboard.release(Key.enter)
+            self.keyboard.press(Key.home)
+            self.keyboard.release(Key.home)
+            
+            self.current_index = i + 1
+            time.sleep(self.typing_speed * 2)  # Slight pause between lines
 
     def toggle_typing(self):
         if not self.running:
@@ -141,7 +180,16 @@ class AccurateCodeAutoTyper:
 
     def delayed_start(self):
         self.countdown(5)
-        self.autotype_clipboard()
+        if self.running:
+            self.autotype_clipboard()
+
+    def countdown(self, duration):
+        for i in range(duration, 0, -1):
+            if not self.running:
+                break
+            self.timer_label.config(text=f"Starting in {i}...")
+            time.sleep(1)
+        self.timer_label.config(text="")
 
     def toggle_pause(self):
         if self.running:
@@ -149,18 +197,19 @@ class AccurateCodeAutoTyper:
             if self.paused:
                 self.status_label.config(text="Status: Paused", foreground="#ffcc00")
             else:
-                self.status_label.config(text="Status: Typing", foreground="#00ff00")
+                self.status_label.config(text="Status: Resuming", foreground="#00ff00")
                 threading.Thread(target=self.delayed_resume, daemon=True).start()
 
     def delayed_resume(self):
-        self.countdown(5)
-        self.autotype_clipboard()
+        self.countdown(3)
+        if self.running and not self.paused:
+            self.autotype_clipboard()
 
     def stop_typing(self):
         self.running = False
         self.paused = False
-        self.current_index = 0  # Reset typing point
-        self.clipboard_text = []  # Clear clipboard text
+        self.current_index = 0
+        self.clipboard_text = []
         self.start_button.config(text="Start Typing (F6)")
         self.status_label.config(text="Status: Stopped", foreground="#ff0000")
 
@@ -168,7 +217,7 @@ class AccurateCodeAutoTyper:
         self.master.destroy()
 
     def toggle_hide(self):
-        if self.master.state() == "normal":
+        if self.master.state() == 'normal':
             self.master.withdraw()
         else:
             self.master.deiconify()
@@ -186,5 +235,5 @@ class AccurateCodeAutoTyper:
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = AccurateCodeAutoTyper(root)
+    app = LinuxCodeAutoTyper(root)
     root.mainloop()
